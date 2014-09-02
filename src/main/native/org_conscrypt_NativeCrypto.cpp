@@ -29,10 +29,16 @@
 
 #define LOG_TAG "NativeCrypto"
 
+#if !defined(__MINGW32__) && !defined(__MINGW64__)
 #include <arpa/inet.h>
+#include <sys/socket.h>
+#else
+#include <ws2tcpip.h>
+#include "mingw-extensions.h"
+#endif
+
 #include <fcntl.h>
 #include <pthread.h>
-#include <sys/socket.h>
 #include <unistd.h>
 
 #ifdef CONSCRYPT_UNBUNDLED
