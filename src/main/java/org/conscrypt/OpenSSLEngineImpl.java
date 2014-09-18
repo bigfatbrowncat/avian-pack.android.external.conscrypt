@@ -407,8 +407,13 @@ public class OpenSSLEngineImpl extends SSLEngine implements NativeCrypto.SSLHand
             }
         }
 
-        // If we haven't completed the handshake yet, just let the caller know.
         HandshakeStatus handshakeStatus = getHandshakeStatus();
+
+        if (! src.hasRemaining()) {
+            return new SSLEngineResult(Status.BUFFER_UNDERFLOW, handshakeStatus, 0, 0);
+        }
+
+        // If we haven't completed the handshake yet, just let the caller know.
         if (handshakeStatus == HandshakeStatus.NEED_UNWRAP) {
             OpenSSLBIOSource source = OpenSSLBIOSource.wrap(src);
             long sslSessionCtx = 0L;
