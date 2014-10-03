@@ -97,7 +97,7 @@ public class SSLParametersImpl implements Cloneable {
     byte[] npnProtocols;
     byte[] alpnProtocols;
     boolean useSessionTickets;
-    boolean useSni;
+    private Boolean useSni;
 
     /**
      * Whether the TLS Channel ID extension is enabled. This field is
@@ -330,7 +330,7 @@ public class SSLParametersImpl implements Cloneable {
      * extension Server Name Indication (SNI).
      */
     protected void setUseSni(boolean flag) {
-        useSni = flag;
+        useSni = Boolean.valueOf(flag);
     }
 
     /**
@@ -338,7 +338,7 @@ public class SSLParametersImpl implements Cloneable {
      * extension Server Name Indication (SNI).
      */
     protected boolean getUseSni() {
-        return useSni;
+        return useSni != null ? useSni.booleanValue() : isSniEnabledByDefault();
     }
 
     static byte[][] encodeIssuerX509Principals(X509Certificate[] certificates)
@@ -455,7 +455,7 @@ public class SSLParametersImpl implements Cloneable {
     }
 
     void setSSLParameters(long sslCtxNativePointer, long sslNativePointer, AliasChooser chooser,
-            PSKCallbacks pskCallbacks, String hostname) throws SSLException, IOException {
+            PSKCallbacks pskCallbacks, String sniHostname) throws SSLException, IOException {
         if (npnProtocols != null) {
             NativeCrypto.SSL_CTX_enable_npn(sslCtxNativePointer);
         }
@@ -514,8 +514,8 @@ public class SSLParametersImpl implements Cloneable {
         if (useSessionTickets) {
             NativeCrypto.SSL_clear_options(sslNativePointer, NativeCrypto.SSL_OP_NO_TICKET);
         }
-        if (useSni) {
-            NativeCrypto.SSL_set_tlsext_host_name(sslNativePointer, hostname);
+        if (getUseSni() && AddressUtils.isValidSniHostname(sniHostname)) {
+            NativeCrypto.SSL_set_tlsext_host_name(sslNativePointer, sniHostname);
         }
 
         // BEAST attack mitigation (1/n-1 record splitting for CBC cipher suites
@@ -525,6 +525,43 @@ public class SSLParametersImpl implements Cloneable {
         boolean enableSessionCreation = getEnableSessionCreation();
         if (!enableSessionCreation) {
             NativeCrypto.SSL_set_session_creation_enabled(sslNativePointer, enableSessionCreation);
+        }
+    }
+
+    /**
+     * Returns true when the supplied hostname is valid for SNI purposes.
+     */
+    private static boolean isValidSniHostname(String sniHostname) {
+        if (sniHostname == null) {
+            return false;
+        }
+
+        // Must be a FQDN.
+        if (sniHostname.indexOf('.') == -1) {
+            return false;
+        }
+
+        if (Platform.isLiteralIpAddress(sniHostname)) {
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * Returns whether Server Name Indication (SNI) is enabled by default for
+     * sockets. For more information on SNI, see RFC 6066 section 3.
+     */
+    private boolean isSniEnabledByDefault() {
+        String enableSNI = System.getProperty("jsse.enableSNIExtension",
+                Platform.isSniEnabledByDefault() ? "true" : "false");
+        if ("true".equalsIgnoreCase(enableSNI)) {
+            return true;
+        } else if ("false".equalsIgnoreCase(enableSNI)) {
+            return false;
+        } else {
+            throw new RuntimeException(
+                    "Can only set \"jsse.enableSNIExtension\" to \"true\" or \"false\"");
         }
     }
 

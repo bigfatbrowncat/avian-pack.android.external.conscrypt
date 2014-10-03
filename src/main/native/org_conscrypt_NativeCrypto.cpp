@@ -29,10 +29,16 @@
 
 #define LOG_TAG "NativeCrypto"
 
+#if !defined(__MINGW32__) && !defined(__MINGW64__)
 #include <arpa/inet.h>
+#include <sys/socket.h>
+#else
+#include <ws2tcpip.h>
+#include "mingw-extensions.h"
+#endif
+
 #include <fcntl.h>
 #include <pthread.h>
-#include <sys/socket.h>
 #include <unistd.h>
 
 #ifdef CONSCRYPT_UNBUNDLED
@@ -1336,11 +1342,11 @@ int RsaMethodPubEnc(int /* flen */,
     return -1;
 }
 
-int RsaMethodPubDec(int flen,
-                    const unsigned char* from,
-                    unsigned char* to,
-                    RSA* rsa,
-                    int padding) {
+int RsaMethodPubDec(int /* flen */,
+                    const unsigned char* /* from */,
+                    unsigned char* /* to */,
+                    RSA* /* rsa */,
+                    int /* padding */) {
     RSAerr(RSA_F_RSA_PUBLIC_DECRYPT, RSA_R_RSA_OPERATIONS_NOT_SUPPORTED);
     return -1;
 }
@@ -9783,15 +9789,6 @@ static jclass getGlobalRefToClass(JNIEnv* env, const char* className) {
         abort();
     }
     return globalRef;
-}
-
-static jmethodID getStaticMethodRef(JNIEnv* env, jclass clazz, const char* name, const char* sig) {
-    jmethodID localMethod = env->GetStaticMethodID(clazz, name, sig);
-    if (localMethod == NULL) {
-        ALOGE("could not find static method %s", name);
-        abort();
-    }
-    return localMethod;
 }
 
 static jmethodID getMethodRef(JNIEnv* env, jclass clazz, const char* name, const char* sig) {
