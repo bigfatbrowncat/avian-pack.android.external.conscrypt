@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2012 The Android Open Source Project
+ * Copyright 2015 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,27 +16,18 @@
 
 package org.conscrypt;
 
-class OpenSSLCipherContext {
-    private final long context;
+import java.io.Serializable;
 
-    OpenSSLCipherContext(long ctx) {
-        if (ctx == 0) {
-            throw new NullPointerException("ctx == 0");
-        }
+/**
+ * This is a fake class to test de-serialization with malicious payloads.
+ */
+public class ZpenSSLX509Certificate implements Serializable {
+    /** This will be set via reflection in the test. */
+    private static final long serialVersionUID = 0L;
 
-        this.context = ctx;
-    }
+    public final long mContext;
 
-    @Override
-    protected void finalize() throws Throwable {
-        try {
-            NativeCrypto.EVP_CIPHER_CTX_free(context);
-        } finally {
-            super.finalize();
-        }
-    }
-
-    long getContext() {
-        return context;
+    ZpenSSLX509Certificate(long ctx) {
+        mContext = ctx;
     }
 }

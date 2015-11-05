@@ -153,6 +153,8 @@ public class OpenSSLEngineImpl extends SSLEngine implements NativeCrypto.SSLHand
             final AbstractSessionContext sessionContext = sslParameters.getSessionContext();
             final long sslCtxNativePointer = sessionContext.sslCtxNativePointer;
             sslNativePointer = NativeCrypto.SSL_new(sslCtxNativePointer);
+            sslSession = sslParameters.getSessionToReuse(
+                    sslNativePointer, getPeerHost(), getPeerPort());
             sslParameters.setSSLParameters(sslCtxNativePointer, sslNativePointer, this, this,
                     getPeerHost());
             sslParameters.setCertificateValidation(sslNativePointer);
@@ -165,6 +167,13 @@ public class OpenSSLEngineImpl extends SSLEngine implements NativeCrypto.SSLHand
             handshakeSink = OpenSSLBIOSink.create();
             releaseResources = false;
         } catch (IOException e) {
+            // Write CCS errors to EventLog
+            String message = e.getMessage();
+            // Must match error reason string of SSL_R_UNEXPECTED_CCS (in ssl/ssl_err.c)
+            if (message.contains("unexpected CCS")) {
+                String logMessage = String.format("ssl_unexpected_ccs: host=%s", getPeerHost());
+                Platform.logEvent(logMessage);
+            }
             throw new SSLException(e);
         } finally {
             if (releaseResources) {
@@ -415,6 +424,7 @@ public class OpenSSLEngineImpl extends SSLEngine implements NativeCrypto.SSLHand
 
         // If we haven't completed the handshake yet, just let the caller know.
         if (handshakeStatus == HandshakeStatus.NEED_UNWRAP) {
+            int positionBeforeHandshake = src.position();
             OpenSSLBIOSource source = OpenSSLBIOSource.wrap(src);
             long sslSessionCtx = 0L;
             try {
@@ -429,7 +439,9 @@ public class OpenSSLEngineImpl extends SSLEngine implements NativeCrypto.SSLHand
                             getPeerHost(), getPeerPort(), true);
                 }
                 int bytesWritten = handshakeSink.position();
-                return new SSLEngineResult(Status.OK, getHandshakeStatus(), 0, bytesWritten);
+                int bytesConsumed = (src.position() - positionBeforeHandshake);
+                return new SSLEngineResult((bytesConsumed > 0) ? Status.OK : Status.BUFFER_UNDERFLOW,
+                        getHandshakeStatus(), bytesConsumed, bytesWritten);
             } catch (Exception e) {
                 throw (SSLHandshakeException) new SSLHandshakeException("Handshake failed")
                         .initCause(e);
@@ -484,7 +496,8 @@ public class OpenSSLEngineImpl extends SSLEngine implements NativeCrypto.SSLHand
 
             int consumed = srcDuplicate.position() - positionBeforeRead;
             src.position(srcDuplicate.position());
-            return new SSLEngineResult(Status.OK, getHandshakeStatus(), consumed, produced);
+            return new SSLEngineResult((consumed > 0) ? Status.OK : Status.BUFFER_UNDERFLOW,
+                    getHandshakeStatus(), consumed, produced);
         } catch (IOException e) {
             throw new SSLException(e);
         } finally {

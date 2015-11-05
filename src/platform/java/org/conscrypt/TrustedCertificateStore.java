@@ -30,6 +30,7 @@ import java.security.cert.X509Certificate;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import javax.security.auth.x500.X500Principal;
@@ -95,10 +96,14 @@ public final class TrustedCertificateStore {
     private static File defaultCaCertsDeletedDir;
     private static final CertificateFactory CERT_FACTORY;
     static {
-        String ANDROID_ROOT = System.getenv("ANDROID_ROOT");
-        String ANDROID_DATA = System.getenv("ANDROID_DATA");
-        defaultCaCertsSystemDir = new File(ANDROID_ROOT + "/etc/security/cacerts");
-        setDefaultUserDirectory(new File(ANDROID_DATA + "/misc/keychain"));
+        //String ANDROID_ROOT = System.getenv("ANDROID_ROOT");
+        //String ANDROID_DATA = System.getenv("ANDROID_DATA");
+        
+		//defaultCaCertsSystemDir = new File(ANDROID_ROOT + "/etc/security/cacerts");	// Modification for avian-pack
+		defaultCaCertsSystemDir = new File(System.getProperty("cacerts.path"));			// Modification for avian-pack
+        
+		//setDefaultUserDirectory(new File(ANDROID_DATA + "/misc/keychain"));			// Modification for avian-pack
+		setDefaultUserDirectory(System.getProperty("user.keychain.path"));				// Modification for avian-pack
 
         try {
             CERT_FACTORY = CertificateFactory.getInstance("X509");
@@ -275,6 +280,10 @@ public final class TrustedCertificateStore {
     }
 
     public String getCertificateAlias(Certificate c) {
+        return getCertificateAlias(c, false);
+    }
+
+    public String getCertificateAlias(Certificate c, boolean includeDeletedSystem) {
         if (c == null || !(c instanceof X509Certificate)) {
             return null;
         }
@@ -283,7 +292,7 @@ public final class TrustedCertificateStore {
         if (user.exists()) {
             return PREFIX_USER + user.getName();
         }
-        if (isDeletedSystemCertificate(x)) {
+        if (!includeDeletedSystem && isDeletedSystemCertificate(x)) {
             return null;
         }
         File system = getCertificateFile(systemDir, x);
@@ -420,19 +429,20 @@ public final class TrustedCertificateStore {
      */
     public List<X509Certificate> getCertificateChain(X509Certificate leaf)
             throws CertificateException {
-        final List<OpenSSLX509Certificate> chain = new ArrayList<OpenSSLX509Certificate>();
-        chain.add(convertToOpenSSLIfNeeded(leaf));
+        final LinkedHashSet<OpenSSLX509Certificate> chain
+                = new LinkedHashSet<OpenSSLX509Certificate>();
+        OpenSSLX509Certificate cert = convertToOpenSSLIfNeeded(leaf);
+        chain.add(cert);
 
-        for (int i = 0; true; i++) {
-            OpenSSLX509Certificate cert = chain.get(i);
+        while (true) {
             if (isSelfIssuedCertificate(cert)) {
                 break;
             }
-            OpenSSLX509Certificate issuer = convertToOpenSSLIfNeeded(findIssuer(cert));
-            if (issuer == null) {
+            cert = convertToOpenSSLIfNeeded(findIssuer(cert));
+            if (cert == null || chain.contains(cert)) {
                 break;
             }
-            chain.add(issuer);
+            chain.add(cert);
         }
 
         return new ArrayList<X509Certificate>(chain);

@@ -336,6 +336,15 @@ public class OpenSSLSocketImpl
                     }
                 }
 
+                // Write CCS errors to EventLog
+                String message = e.getMessage();
+                // Must match error string of SSL_R_UNEXPECTED_CCS
+                if (message.contains("unexpected CCS")) {
+                    String logMessage = String.format("ssl_unexpected_ccs: host=%s",
+                            getHostname());
+                    Platform.logEvent(logMessage);
+                }
+
                 throw e;
             }
 
@@ -423,7 +432,7 @@ public class OpenSSLSocketImpl
 
     @Override
     public int getPort() {
-        return peerHostname == null ? super.getPort() : peerPort;
+        return peerPort == -1 ? super.getPort() : peerPort;
     }
 
     @Override
