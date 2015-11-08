@@ -100,10 +100,19 @@ public final class TrustedCertificateStore {
         //String ANDROID_DATA = System.getenv("ANDROID_DATA");
         
 		//defaultCaCertsSystemDir = new File(ANDROID_ROOT + "/etc/security/cacerts");	// Modification for avian-pack
-		defaultCaCertsSystemDir = new File(System.getProperty("cacerts.path"));			// Modification for avian-pack
+		String cacertsPath = System.getProperty("cacerts.path");
+		if (cacertsPath != null)
+			defaultCaCertsSystemDir = new File(cacertsPath);							// Modification for avian-pack
+		else																			// Modification for avian-pack
+			defaultCaCertsSystemDir = new File(".");									// Modification for avian-pack
         
 		//setDefaultUserDirectory(new File(ANDROID_DATA + "/misc/keychain"));			// Modification for avian-pack
-		setDefaultUserDirectory(System.getProperty("user.keychain.path"));				// Modification for avian-pack
+		
+		String userKeychainPath = System.getProperty("user.keychain.path");
+		if (userKeychainPath != null)
+			setDefaultUserDirectory(new File(userKeychainPath));						// Modification for avian-pack
+		else
+			setDefaultUserDirectory(new File("."));										// Modification for avian-pack
 
         try {
             CERT_FACTORY = CertificateFactory.getInstance("X509");
