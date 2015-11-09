@@ -17,11 +17,13 @@
 package org.conscrypt;
 
 import java.io.BufferedInputStream;
+import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.security.cert.Certificate;
 import java.security.cert.CertificateException;
@@ -91,7 +93,7 @@ public final class TrustedCertificateStore {
         return alias.startsWith(PREFIX_USER);
     }
 
-    private static File defaultCaCertsSystemDir;
+    //private static File defaultCaCertsSystemDir;
     private static File defaultCaCertsAddedDir;
     private static File defaultCaCertsDeletedDir;
     private static final CertificateFactory CERT_FACTORY;
@@ -100,12 +102,12 @@ public final class TrustedCertificateStore {
         //String ANDROID_DATA = System.getenv("ANDROID_DATA");
         
 		//defaultCaCertsSystemDir = new File(ANDROID_ROOT + "/etc/security/cacerts");	// Modification for avian-pack
-		String cacertsPath = System.getProperty("cacerts.path");
+		/*String cacertsPath = System.getProperty("cacerts.path");
 		if (cacertsPath != null)
 			defaultCaCertsSystemDir = new File(cacertsPath);							// Modification for avian-pack
 		else																			// Modification for avian-pack
 			defaultCaCertsSystemDir = new File(".");									// Modification for avian-pack
-        
+        */
 		//setDefaultUserDirectory(new File(ANDROID_DATA + "/misc/keychain"));			// Modification for avian-pack
 		
 		String userKeychainPath = System.getProperty("user.keychain.path");
@@ -126,16 +128,16 @@ public final class TrustedCertificateStore {
         defaultCaCertsDeletedDir = new File(root, "cacerts-removed");
     }
 
-    private final File systemDir;
+    //private final File systemDir;
     private final File addedDir;
     private final File deletedDir;
 
     public TrustedCertificateStore() {
-        this(defaultCaCertsSystemDir, defaultCaCertsAddedDir, defaultCaCertsDeletedDir);
+        this(/*defaultCaCertsSystemDir,*/ defaultCaCertsAddedDir, defaultCaCertsDeletedDir);
     }
 
-    public TrustedCertificateStore(File systemDir, File addedDir, File deletedDir) {
-        this.systemDir = systemDir;
+    public TrustedCertificateStore(/*File systemDir,*/ File addedDir, File deletedDir) {
+        //this.systemDir = systemDir;
         this.addedDir = addedDir;
         this.deletedDir = deletedDir;
     }
@@ -144,13 +146,25 @@ public final class TrustedCertificateStore {
         return getCertificate(alias, false);
     }
 
+    private static final String CERTIFICATE_JAVA_PACKAGE = "java/security/cacerts";
     public Certificate getCertificate(String alias, boolean includeDeletedSystem) {
 
-        File file = fileForAlias(alias);
-        if (file == null || (isUser(alias) && isTombstone(file))) {
-            return null;
-        }
-        X509Certificate cert = readCertificate(file);
+    	X509Certificate cert;
+    	if (isSystem(alias)) {
+       		InputStream certStream = this.getClass().getClassLoader().getResourceAsStream(
+				CERTIFICATE_JAVA_PACKAGE + "/" + alias.substring(PREFIX_SYSTEM.length())
+			);
+
+			if (certStream == null) return null;
+
+    		cert = readCertificate(certStream);
+    	} else {
+	        File file = fileForAlias(alias);
+	        if (file == null || (isUser(alias) && isTombstone(file))) {
+	            return null;
+	        }
+	        cert = readCertificate(file);
+    	}
         if (cert == null || (isSystem(alias)
                              && !includeDeletedSystem
                              && isDeletedSystemCertificate(cert))) {
@@ -165,9 +179,9 @@ public final class TrustedCertificateStore {
             throw new NullPointerException("alias == null");
         }
         File file;
-        if (isSystem(alias)) {
+        /*if (isSystem(alias)) {
             file = new File(systemDir, alias.substring(PREFIX_SYSTEM.length()));
-        } else if (isUser(alias)) {
+        } else */if (isUser(alias)) {
             file = new File(addedDir, alias.substring(PREFIX_USER.length()));
         } else {
             return null;
@@ -183,6 +197,17 @@ public final class TrustedCertificateStore {
         return file.length() == 0;
     }
 
+    private X509Certificate readCertificate(InputStream is) {
+        try {
+            is = new BufferedInputStream(is);
+            return (X509Certificate) CERT_FACTORY.generateCertificate(is);
+        } catch (CertificateException e) {
+            // reading a cert while its being installed can lead to this.
+            // just pretend like its not available yet.
+            return null;
+        }
+    }
+
     private X509Certificate readCertificate(File file) {
         if (!file.isFile()) {
             return null;
@@ -190,12 +215,8 @@ public final class TrustedCertificateStore {
         InputStream is = null;
         try {
             is = new BufferedInputStream(new FileInputStream(file));
-            return (X509Certificate) CERT_FACTORY.generateCertificate(is);
+            return (X509Certificate) readCertificate(is);
         } catch (IOException e) {
-            return null;
-        } catch (CertificateException e) {
-            // reading a cert while its being installed can lead to this.
-            // just pretend like its not available yet.
             return null;
         } finally {
             IoUtils.closeQuietly(is);
@@ -239,10 +260,32 @@ public final class TrustedCertificateStore {
         return new Date(time);
     }
 
+    private String[] getSystemFileNames() {
+        BufferedReader bsr = new BufferedReader(
+        	new InputStreamReader(
+        		getClass().getClassLoader().getResourceAsStream(CERTIFICATE_JAVA_PACKAGE + "/list.txt")
+        	)
+        );
+            
+        ArrayList<String> strs = new ArrayList<>();
+        try {
+	        String line;
+	        while ((line = bsr.readLine()) != null && (line.length() > 0)) {
+	        	strs.add(line);
+	        }
+        } catch (IOException e) {
+        	throw new RuntimeException("Problem with reading internal certificates list file");
+        }
+        
+        String[] files = strs.toArray(new String[] {});
+        return files;
+    }
+    
     public Set<String> aliases() {
         Set<String> result = new HashSet<String>();
         addAliases(result, PREFIX_USER, addedDir);
-        addAliases(result, PREFIX_SYSTEM, systemDir);
+        //addAliases(result, PREFIX_SYSTEM, systemDir);
+        result.addAll(allSystemAliases());
         return result;
     }
 
@@ -267,7 +310,8 @@ public final class TrustedCertificateStore {
 
     public Set<String> allSystemAliases() {
         Set<String> result = new HashSet<String>();
-        String[] files = systemDir.list();
+
+        String[] files = getSystemFileNames();
         if (files == null) {
             return result;
         }
@@ -304,10 +348,10 @@ public final class TrustedCertificateStore {
         if (!includeDeletedSystem && isDeletedSystemCertificate(x)) {
             return null;
         }
-        File system = getCertificateFile(systemDir, x);
+        /*File system = getCertificateFile(systemDir, x);
         if (system.exists()) {
             return PREFIX_SYSTEM + system.getName();
-        }
+        }*/
         return null;
     }
 
@@ -360,7 +404,7 @@ public final class TrustedCertificateStore {
         if (user != null) {
             return user;
         }
-        X509Certificate system = findCert(systemDir,
+        X509Certificate system = findCert(null,
                                           c.getSubjectX500Principal(),
                                           selector,
                                           X509Certificate.class);
@@ -393,7 +437,7 @@ public final class TrustedCertificateStore {
         if (user != null) {
             return user;
         }
-        X509Certificate system = findCert(systemDir, issuer, selector, X509Certificate.class);
+        X509Certificate system = findCert(null, issuer, selector, X509Certificate.class);
         if (system != null && !isDeletedSystemCertificate(system)) {
             return system;
         }
@@ -462,29 +506,53 @@ public final class TrustedCertificateStore {
         public boolean match(X509Certificate cert);
     }
 
+    /**
+     * 
+     * @param dir null means systemDir
+     * @param subject
+     * @param selector
+     * @param desiredReturnType
+     * @return
+     */
     private <T> T findCert(
             File dir, X500Principal subject, CertSelector selector, Class<T> desiredReturnType) {
 
         String hash = hash(subject);
         for (int index = 0; true; index++) {
-            File file = file(dir, hash, index);
-            if (!file.isFile()) {
-                // could not find a match, no file exists, bail
-                if (desiredReturnType == Boolean.class) {
-                    return (T) Boolean.FALSE;
-                }
-                if (desiredReturnType == File.class) {
-                    // we return file so that caller that wants to
-                    // write knows what the next available has
-                    // location is
-                    return (T) file;
-                }
-                return null;
-            }
-            if (isTombstone(file)) {
-                continue;
-            }
-            X509Certificate cert = readCertificate(file);
+        	X509Certificate cert;
+        	File file = null;
+        	if (dir != null) {
+	            file = file(dir, hash, index);
+	            if (!file.isFile()) {
+	                // could not find a match, no file exists, bail
+	                if (desiredReturnType == Boolean.class) {
+	                    return (T) Boolean.FALSE;
+	                }
+	                if (desiredReturnType == File.class) {
+	                    // we return file so that caller that wants to
+	                    // write knows what the next available has
+	                    // location is
+	                    return (T) file;
+	                }
+	                return null;
+	            }
+	            if (isTombstone(file)) {
+	                continue;
+	            }
+	            cert = readCertificate(file);
+        	} else {
+        		InputStream certStream = this.getClass().getClassLoader().getResourceAsStream(
+						CERTIFICATE_JAVA_PACKAGE + "/" + hash + '.' + index
+				);
+        		if (certStream == null) {
+        			if (desiredReturnType == Boolean.class) {
+	                    return (T) Boolean.FALSE;
+	                }
+	                return null;
+        		}
+        		cert = readCertificate(certStream);
+        	}
+
             if (cert == null) {
                 // skip problem certificates
                 continue;
@@ -523,7 +591,7 @@ public final class TrustedCertificateStore {
         if (cert == null) {
             throw new NullPointerException("cert == null");
         }
-        File system = getCertificateFile(systemDir, cert);
+        File system = getCertificateFile(null, cert);
         if (system.exists()) {
             File deleted = getCertificateFile(deletedDir, cert);
             if (deleted.exists()) {
