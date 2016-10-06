@@ -34,6 +34,7 @@
 #include <sys/socket.h>
 #else
 #include <ws2tcpip.h>
+#define MINGW_EXTENSIONS_EXTRA_CHECK
 #include "mingw-extensions.h"
 #endif
 
@@ -6549,10 +6550,18 @@ class AppData {
     ~AppData() {
         aliveAndKicking = 0;
         if (fdsEmergency[0] != -1) {
+#if !defined(__MINGW32__) && !defined(__MINGW64__)
             close(fdsEmergency[0]);
+#else
+            mingw_close(fdsEmergency[0]);
+#endif
         }
         if (fdsEmergency[1] != -1) {
+#if !defined(__MINGW32__) && !defined(__MINGW64__)
             close(fdsEmergency[1]);
+#else
+            mingw_close(fdsEmergency[1]);
+#endif
         }
         clearCallbackState();
         MUTEX_CLEANUP(mutex);
@@ -6745,7 +6754,11 @@ static int sslSelect(JNIEnv* env, int type, jobject fdObject, AppData* appData, 
         if (FD_ISSET(appData->fdsEmergency[0], &rfds)) {
             char token;
             do {
+#if !defined(__MINGW32__) && !defined(__MINGW64__)
                 read(appData->fdsEmergency[0], &token, 1);
+#else
+                mingw_read(appData->fdsEmergency[0], &token, 1);
+#endif
             } while (errno == EINTR);
         }
     }
@@ -6774,7 +6787,11 @@ static void sslNotify(AppData* appData) {
     char token = '*';
     do {
         errno = 0;
+#if !defined(__MINGW32__) && !defined(__MINGW64__)
         write(appData->fdsEmergency[1], &token, 1);
+#else
+        mingw_write(appData->fdsEmergency[1], &token, 1);
+#endif
     } while (errno == EINTR);
     errno = errnoBackup;
 }
@@ -8805,7 +8822,7 @@ static jint NativeCrypto_SSL_read_BIO(JNIEnv* env, jclass, jlong sslRef, jbyteAr
         if (n > WITH_JNI_TRACE_DATA_CHUNK_SIZE) {
             n = WITH_JNI_TRACE_DATA_CHUNK_SIZE;
         }
-        JNI_TRACE("ssl=%p NativeCrypto_SSL_read_BIO data: %d:\n%.*s", ssl, n, n, buf+i);
+        //JNI_TRACE("ssl=%p NativeCrypto_SSL_read_BIO data: %d:\n%.*s", ssl, n, n, buf+i);
     }
 #endif
 
@@ -9131,7 +9148,7 @@ static int NativeCrypto_SSL_write_BIO(JNIEnv* env, jclass, jlong sslRef, jbyteAr
         if (n > WITH_JNI_TRACE_DATA_CHUNK_SIZE) {
             n = WITH_JNI_TRACE_DATA_CHUNK_SIZE;
         }
-        JNI_TRACE("ssl=%p NativeCrypto_SSL_write_BIO data: %d:\n%.*s", ssl, n, n, buf+i);
+        //JNI_TRACE("ssl=%p NativeCrypto_SSL_write_BIO data: %d:\n%.*s", ssl, n, n, buf+i);
     }
 #endif
 
